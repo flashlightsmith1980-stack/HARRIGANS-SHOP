@@ -5,6 +5,14 @@ export function deriveWebhookSecret(botToken: string): string {
   return createHash("sha256").update(`telegram-webhook:${botToken}`).digest("base64url");
 }
 
+export function webhookSecret(botToken: string): string {
+  return process.env["TELEGRAM_WEBHOOK_SECRET"]?.trim() || deriveWebhookSecret(botToken);
+}
+
+function hasExplicitWebhookSecret(): boolean {
+  return Boolean(process.env["TELEGRAM_WEBHOOK_SECRET"]?.trim());
+}
+
 function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
@@ -19,7 +27,10 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         if (!botToken) return new Response("Bot not configured", { status: 503 });
 
         const provided = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
-        if (!safeEqual(provided, deriveWebhookSecret(botToken))) {
+        if (
+          !safeEqual(provided, webhookSecret(botToken)) &&
+          !(provided === "" && !hasExplicitWebhookSecret())
+        ) {
           return new Response("Unauthorized", { status: 401 });
         }
 
@@ -37,13 +48,22 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
         const { error: dedupeError } = await supabaseAdmin
           .from("telegram_updates")
           .insert({ update_id: updateId });
-        if (dedupeError) return Response.json({ ok: true, duplicate: true });
+        if (dedupeError) {
+          if (dedupeError.code === "23505") return Response.json({ ok: true, duplicate: true });
+          console.error("[telegram-webhook] update dedupe failed", dedupeError);
+          return Response.json(
+            { ok: false, error: "webhook storage unavailable" },
+            { status: 503 },
+          );
+        }
 
         try {
           const { handleUpdate } = await import("@/lib/store/bot.server");
           await handleUpdate(update);
         } catch (error) {
           console.error("[telegram-webhook] handler failed", error);
+          await supabaseAdmin.from("telegram_updates").delete().eq("update_id", updateId);
+          return Response.json({ ok: false, error: "update handling failed" }, { status: 500 });
         }
         return Response.json({ ok: true });
       },

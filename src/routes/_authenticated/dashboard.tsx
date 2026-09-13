@@ -1,356 +1,254 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Copy, Download, Lock, Wallet, Receipt, Link2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  adjustCustomerBalance,
-  addProductKeys,
-  broadcastMessage,
-  claimAdmin,
-  dashboardStats,
-  reviewPayment,
-} from "@/lib/admin.functions";
+import { accountOverview, linkTelegramAccount } from "@/lib/storefront.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SiteHeader } from "@/components/site-header";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
-      { title: "Store console — Crypto Store Bot" },
-      { name: "description", content: "Approve crypto payments, manage stock and message customers of your Telegram store." },
-      { property: "og:title", content: "Store console — Crypto Store Bot" },
-      { property: "og:description", content: "Approve crypto payments, manage stock and message customers." },
+      { title: "Dashboard — your account" },
+      {
+        name: "description",
+        content: "Your balance, purchases, delivered keys and deposit history in one place.",
+      },
+      { property: "og:title", content: "Dashboard — your account" },
+      {
+        property: "og:description",
+        content: "Your balance, purchases, delivered keys and deposit history in one place.",
+      },
     ],
   }),
-  component: Dashboard,
+  component: CustomerDashboard,
 });
 
-type Tx = {
-  id: number;
-  invoice_code: string;
-  user_id: number;
-  amount_usd: number;
-  crypto_amount: number | null;
-  currency: string;
-  status: string;
-  tx_hash: string | null;
-  verification_note: string | null;
-  created_at: string;
-};
+const money = (value: number) => `$${Number(value ?? 0).toFixed(2)}`;
 
-type Customer = {
-  id: number;
-  telegram_id: number;
-  username: string | null;
-  wallet_balance: number;
-  is_banned: boolean;
-};
-
-type Product = { id: number; name: string; price: number; stock_count: number; is_active: boolean };
-
-function money(value: number) {
-  return `$${Number(value ?? 0).toFixed(2)}`;
-}
-
-function Dashboard() {
+function CustomerDashboard() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const getStats = useServerFn(dashboardStats);
-  const review = useServerFn(reviewPayment);
-  const adjust = useServerFn(adjustCustomerBalance);
-  const broadcast = useServerFn(broadcastMessage);
-  const addKeys = useServerFn(addProductKeys);
-  const claim = useServerFn(claimAdmin);
+  const client = useQueryClient();
+  const load = useServerFn(accountOverview);
+  const link = useServerFn(linkTelegramAccount);
+  const [handle, setHandle] = useState("");
   const [busy, setBusy] = useState(false);
+  const query = useQuery({ queryKey: ["account-overview"], queryFn: () => load({}) });
 
-  const stats = useQuery({ queryKey: ["stats"], queryFn: () => getStats({}) });
-  const payments = useQuery({
-    queryKey: ["payments"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("transactions")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return data as unknown as Tx[];
-    },
-  });
-  const customers = useQuery({
-    queryKey: ["customers"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("bot_users")
-        .select("id, telegram_id, username, wallet_balance, is_banned")
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return data as unknown as Customer[];
-    },
-  });
-  const products = useQuery({
-    queryKey: ["products"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("id, name, price, stock_count, is_active")
-        .order("id");
-      if (error) throw error;
-      return data as unknown as Product[];
-    },
-  });
-
-  async function run(action: () => Promise<string>) {
+  async function connect() {
     setBusy(true);
     try {
-      toast.success(await action());
-      await queryClient.invalidateQueries();
+      const result = await link({ data: { handle } });
+      toast.success(result.message);
+      await client.invalidateQueries();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong");
+      toast.error(error instanceof Error ? error.message : "Could not connect that account");
     } finally {
       setBusy(false);
     }
   }
 
-  const isForbidden = stats.error instanceof Error && /forbidden/i.test(stats.error.message);
-
-  if (isForbidden) {
-    return (
-      <main className="flex min-h-screen items-center justify-center px-6">
-        <div className="panel max-w-md space-y-4 p-8 text-center">
-          <h1 className="text-2xl font-bold">Admin access required</h1>
-          <p className="text-sm text-muted-foreground">
-            This account has no admin role yet. If your store has no admin, claim it now.
-          </p>
-          <Button
-            disabled={busy}
-            onClick={() => run(async () => (await claim({})).reason)}
-            className="w-full"
-          >
-            Claim admin access
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full"
-            onClick={async () => {
-              await supabase.auth.signOut();
-              navigate({ to: "/auth" });
-            }}
-          >
-            Sign out
-          </Button>
-        </div>
-      </main>
-    );
+  async function signOut() {
+    await client.cancelQueries();
+    client.clear();
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
   }
 
-  return (
-    <main className="mx-auto max-w-6xl space-y-8 px-6 py-10">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Store console</h1>
-          <p className="text-sm text-muted-foreground">Manual crypto checkout for @Enroll_Logsbot</p>
-        </div>
-        <Button
-          variant="secondary"
-          onClick={async () => {
-            await supabase.auth.signOut();
-            navigate({ to: "/auth" });
-          }}
-        >
-          Sign out
-        </Button>
-      </div>
+  const data = query.data;
+  const account = data?.account;
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {[
-          { label: "Customers", value: stats.data?.customers ?? 0 },
-          { label: "Completed orders", value: stats.data?.orders ?? 0 },
-          { label: "Pending payments", value: stats.data?.pendingPayments ?? 0 },
-          { label: "Revenue", value: money(stats.data?.revenue ?? 0) },
-          { label: "Held balances", value: money(stats.data?.liability ?? 0) },
-        ].map((card) => (
-          <div key={card.label} className="panel p-4">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">{card.label}</p>
-            <p className="font-display mt-2 text-2xl">{card.value}</p>
+  return (
+    <div className="min-h-screen">
+      <SiteHeader storeName="Enroll Log" />
+      <main className="mx-auto flex max-w-5xl flex-col gap-8 px-4 py-10">
+        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
+          <div>
+            <p className="font-mono text-xs uppercase tracking-[0.24em] text-primary">Your account</p>
+            <h1 className="font-display mt-1 text-3xl font-bold">Dashboard</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Balance, purchases and deposits — synced with your Telegram store account.
+            </p>
           </div>
-        ))}
-      </section>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link to="/shop">Browse products</Link>
+            </Button>
+            <Button variant="secondary" onClick={signOut}>
+              Sign out
+            </Button>
+          </div>
+        </header>
 
-      <Tabs defaultValue="payments">
-        <TabsList>
-          <TabsTrigger value="payments">Payments</TabsTrigger>
-          <TabsTrigger value="customers">Customers</TabsTrigger>
-          <TabsTrigger value="products">Products</TabsTrigger>
-          <TabsTrigger value="broadcast">Broadcast</TabsTrigger>
-        </TabsList>
+        {query.isLoading && <p className="text-sm text-muted-foreground">Loading your account…</p>}
 
-        <TabsContent value="payments" className="mt-4 space-y-3">
-          {(payments.data ?? []).map((tx) => (
-            <div key={tx.id} className="panel flex flex-wrap items-center justify-between gap-4 p-4">
-              <div className="min-w-0">
-                <p className="font-display text-sm">
-                  {tx.invoice_code} · {money(tx.amount_usd)} · {tx.currency}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {tx.tx_hash ? `hash ${tx.tx_hash}` : "no hash submitted"}
-                  {tx.verification_note ? ` — ${tx.verification_note}` : ""}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant={tx.status === "completed" ? "default" : tx.status === "failed" ? "destructive" : "secondary"}>
-                  {tx.status}
-                </Badge>
-                {tx.status !== "completed" && (
-                  <>
-                    <Button size="sm" variant="secondary" disabled={busy} onClick={() => run(async () => (await review({ data: { id: tx.id, action: "recheck" } })).message)}>
-                      Re-check
-                    </Button>
-                    <Button size="sm" disabled={busy} onClick={() => run(async () => (await review({ data: { id: tx.id, action: "approve" } })).message)}>
-                      Approve
-                    </Button>
-                    <Button size="sm" variant="destructive" disabled={busy} onClick={() => run(async () => (await review({ data: { id: tx.id, action: "reject" } })).message)}>
-                      Reject
-                    </Button>
-                  </>
-                )}
-              </div>
+        {data && !data.linked && (
+          <section className="panel flex flex-col gap-3 p-6">
+            <h2 className="flex items-center gap-2 text-lg font-semibold">
+              <Link2 className="size-4 text-primary" /> Connect your Telegram account
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Already shopping with the bot or Mini App? Enter your Telegram @username or numeric ID
+              once and your balance, purchases and deposits appear here.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                className="max-w-xs"
+                placeholder="@username or 123456789"
+                value={handle}
+                onChange={(event) => setHandle(event.target.value)}
+              />
+              <Button disabled={busy || handle.trim().length < 2} onClick={connect}>
+                Connect
+              </Button>
             </div>
-          ))}
-          {payments.data?.length === 0 && <p className="text-sm text-muted-foreground">No invoices yet.</p>}
-        </TabsContent>
+          </section>
+        )}
 
-        <TabsContent value="customers" className="mt-4 space-y-3">
-          {(customers.data ?? []).map((customer) => (
-            <CustomerRow key={customer.id} customer={customer} busy={busy} onAdjust={(amount, reason) => run(async () => {
-              const result = await adjust({ data: { userId: customer.id, amount, reason } });
-              return `New balance: ${money(result.balance)}`;
-            })} />
-          ))}
-          {customers.data?.length === 0 && <p className="text-sm text-muted-foreground">No customers yet.</p>}
-        </TabsContent>
+        {account && (
+          <>
+            <section className="grid gap-3 sm:grid-cols-3">
+              <Tile icon={Wallet} label="Balance" value={money(account.balance)} />
+              <Tile icon={Lock} label="Locked bonus" value={money(account.locked)} />
+              <Tile
+                icon={Receipt}
+                label="Spendable"
+                value={money(Math.max(0, account.balance - account.locked))}
+              />
+            </section>
 
-        <TabsContent value="products" className="mt-4 space-y-3">
-          {(products.data ?? []).map((product) => (
-            <ProductRow key={product.id} product={product} busy={busy} onAddKeys={(keys) => run(async () => {
-              const result = await addKeys({ data: { productId: product.id, keys } });
-              return `Added ${result.added} keys · stock ${result.stock}`;
-            })} />
-          ))}
-          {products.data?.length === 0 && (
-            <p className="text-sm text-muted-foreground">No products yet — add them from the bot admin panel.</p>
-          )}
-        </TabsContent>
+            <section className="panel p-5">
+              <h2 className="text-lg font-semibold">Profile</h2>
+              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+                <Row label="Telegram ID" value={String(account.telegram_id)} />
+                <Row label="Username" value={account.username ? `@${account.username}` : "—"} />
+                <Row label="Name" value={account.first_name ?? "—"} />
+              </dl>
+            </section>
 
-        <TabsContent value="broadcast" className="mt-4">
-          <BroadcastPanel busy={busy} onSend={(text) => run(async () => `Broadcast sent to ${(await broadcast({ data: { text } })).sent} customers`)} />
-        </TabsContent>
-      </Tabs>
-    </main>
-  );
-}
+            <section className="flex flex-col gap-3">
+              <h2 className="text-lg font-semibold">Purchases</h2>
+              {(data?.orders ?? []).map((order) => (
+                <article key={order.id} className="panel flex flex-col gap-3 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">Order #{order.id}</span>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{order.status}</Badge>
+                      <Badge variant="secondary">{money(order.total)}</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(order.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <ul className="flex flex-col gap-2">
+                    {order.items.map((item) => (
+                      <li
+                        key={item.id}
+                        className="rounded-md border border-border bg-background/60 p-3 text-sm"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span>
+                            {item.name} × {item.quantity}
+                          </span>
+                          <span className="text-muted-foreground">{money(item.price)}</span>
+                        </div>
+                        {item.delivered_asset && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <code className="max-w-full flex-1 truncate rounded bg-muted px-2 py-1 font-mono text-xs">
+                              {item.delivered_asset}
+                            </code>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                navigator.clipboard.writeText(item.delivered_asset ?? "");
+                                toast.success("Copied");
+                              }}
+                            >
+                              <Copy className="size-3.5" />
+                            </Button>
+                            {/^https?:\/\//.test(item.delivered_asset) && (
+                              <Button asChild size="sm" variant="outline">
+                                <a href={item.delivered_asset} target="_blank" rel="noreferrer">
+                                  <Download className="size-3.5" />
+                                </a>
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              ))}
+              {!(data?.orders ?? []).length && (
+                <p className="text-sm text-muted-foreground">No purchases yet.</p>
+              )}
+            </section>
 
-function CustomerRow({
-  customer,
-  busy,
-  onAdjust,
-}: {
-  customer: Customer;
-  busy: boolean;
-  onAdjust: (amount: number, reason: string) => void;
-}) {
-  const [amount, setAmount] = useState("");
-  return (
-    <div className="panel flex flex-wrap items-center justify-between gap-4 p-4">
-      <div>
-        <p className="font-display text-sm">
-          {customer.username ? `@${customer.username}` : `id ${customer.telegram_id}`}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Balance {money(customer.wallet_balance)} {customer.is_banned ? "· banned" : ""}
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <Input
-          className="w-28"
-          placeholder="±10.00"
-          value={amount}
-          onChange={(event) => setAmount(event.target.value)}
-        />
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={() => {
-            const parsed = Number(amount);
-            if (!parsed) return;
-            onAdjust(parsed, "Console adjustment");
-            setAmount("");
-          }}
-        >
-          Adjust
-        </Button>
-      </div>
+            <section className="flex flex-col gap-3">
+              <h2 className="text-lg font-semibold">Deposits</h2>
+              {(data?.deposits ?? []).map((deposit) => (
+                <div
+                  key={deposit.id}
+                  className="panel flex flex-wrap items-center justify-between gap-2 p-3 text-sm"
+                >
+                  <span className="font-mono text-xs">{deposit.code}</span>
+                  <span className="text-muted-foreground">{deposit.asset}</span>
+                  <span>{money(deposit.amount)}</span>
+                  <Badge variant="outline">{deposit.status}</Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(deposit.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+              ))}
+              {!(data?.deposits ?? []).length && (
+                <p className="text-sm text-muted-foreground">No deposits yet.</p>
+              )}
+            </section>
+          </>
+        )}
+
+        {data?.isAdmin && (
+          <p className="pt-6 text-center text-xs text-muted-foreground">
+            <Link to="/ops-x7k2q9" className="hover:text-foreground">
+              ·
+            </Link>
+          </p>
+        )}
+      </main>
     </div>
   );
 }
 
-function ProductRow({
-  product,
-  busy,
-  onAddKeys,
+function Tile({
+  icon: Icon,
+  label,
+  value,
 }: {
-  product: Product;
-  busy: boolean;
-  onAddKeys: (keys: string) => void;
+  icon: typeof Wallet;
+  label: string;
+  value: string;
 }) {
-  const [keys, setKeys] = useState("");
   return (
-    <div className="panel space-y-3 p-4">
-      <div className="flex items-center justify-between gap-4">
-        <p className="font-display text-sm">
-          {product.name} · {money(product.price)}
-        </p>
-        <Badge variant="secondary">{product.stock_count} in stock</Badge>
-      </div>
-      <Textarea
-        rows={3}
-        placeholder="One key or account per line"
-        value={keys}
-        onChange={(event) => setKeys(event.target.value)}
-      />
-      <Button
-        size="sm"
-        disabled={busy || !keys.trim()}
-        onClick={() => {
-          onAddKeys(keys);
-          setKeys("");
-        }}
-      >
-        Add stock
-      </Button>
+    <div className="panel vault-gradient p-4">
+      <Icon className="size-4 text-primary" />
+      <p className="font-display mt-2 text-2xl font-bold">{value}</p>
+      <p className="text-xs uppercase tracking-widest text-muted-foreground">{label}</p>
     </div>
   );
 }
 
-function BroadcastPanel({ busy, onSend }: { busy: boolean; onSend: (text: string) => void }) {
-  const [text, setText] = useState("");
+function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="panel space-y-3 p-4">
-      <Textarea rows={5} placeholder="Message to all customers…" value={text} onChange={(e) => setText(e.target.value)} />
-      <Button
-        disabled={busy || text.trim().length < 2}
-        onClick={() => {
-          onSend(text);
-          setText("");
-        }}
-      >
-        Send broadcast
-      </Button>
+    <div>
+      <dt className="text-xs uppercase tracking-widest text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5">{value}</dd>
     </div>
   );
 }

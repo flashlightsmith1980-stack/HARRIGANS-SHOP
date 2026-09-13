@@ -2,7 +2,13 @@
 import { getDb, getSettings, money, setState, type StoreSettings } from "./db.server";
 import { ASSET_LABEL, formatAmount, type PaymentAsset } from "./rates.server";
 import { settleTransaction, verifyAndSettle, type Transaction } from "./payments.server";
-import { answerCallback, editMessage, escapeHtml, sendMessage, type InlineKeyboard } from "./telegram.server";
+import {
+  answerCallback,
+  editMessage,
+  escapeHtml,
+  sendMessage,
+  type InlineKeyboard,
+} from "./telegram.server";
 
 export const adminMenu: InlineKeyboard = [
   [
@@ -17,14 +23,17 @@ export const adminMenu: InlineKeyboard = [
     { text: "🔑 Add keys", callback_data: "adm:addkeys" },
     { text: "🗂 Add category", callback_data: "adm:addcat" },
   ],
+  [{ text: "🗂 Manage categories", callback_data: "adm:categories" }],
   [
     { text: "👥 Users", callback_data: "adm:users" },
     { text: "⚖️ Disputes", callback_data: "adm:disputes" },
   ],
   [
     { text: "📣 Broadcast", callback_data: "adm:broadcast" },
+    { text: "📝 Templates", callback_data: "adm:templates" },
     { text: "💵 Adjust balance", callback_data: "adm:balance" },
   ],
+  [{ text: "⭐ Send daily promo", callback_data: "adm:promo" }],
   [
     { text: "⚙️ Wallets & settings", callback_data: "adm:settings" },
     { text: "🏠 Store menu", callback_data: "menu" },
@@ -42,7 +51,10 @@ async function stats(): Promise<string> {
   const [users, orders, pending, revenue] = await Promise.all([
     db.from("bot_users").select("id", { count: "exact", head: true }),
     db.from("orders").select("id", { count: "exact", head: true }).eq("status", "completed"),
-    db.from("transactions").select("id", { count: "exact", head: true }).in("status", ["pending", "submitted"]),
+    db
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["pending", "submitted"]),
     db.from("orders").select("total_amount").eq("status", "completed"),
   ]);
   const total = ((revenue.data ?? []) as { total_amount: number }[]).reduce(
@@ -67,9 +79,14 @@ async function pendingPayments(): Promise<{ text: string; markup: InlineKeyboard
     .in("status", ["pending", "submitted"])
     .order("id", { ascending: false })
     .limit(10);
-  const rows = (data ?? []) as unknown as (Transaction & { bot_users: { telegram_id: number; username: string | null } | null })[];
+  const rows = (data ?? []) as unknown as (Transaction & {
+    bot_users: { telegram_id: number; username: string | null } | null;
+  })[];
   if (rows.length === 0) {
-    return { text: "💳 <b>Payments</b>\n\nNo payments are waiting for review.", markup: [[{ text: "⬅️ Admin", callback_data: "adm" }]] };
+    return {
+      text: "💳 <b>Payments</b>\n\nNo payments are waiting for review.",
+      markup: [[{ text: "⬅️ Admin", callback_data: "adm" }]],
+    };
   }
   const markup: InlineKeyboard = [];
   const lines = rows.map((tx) => {
@@ -92,16 +109,98 @@ async function pendingPayments(): Promise<{ text: string; markup: InlineKeyboard
   return { text: ["💳 <b>Payments awaiting review</b>", "", ...lines].join("\n\n"), markup };
 }
 
-async function productList(): Promise<string> {
+async function productList(): Promise<{ text: string; markup: InlineKeyboard }> {
   const db = await getDb();
-  const { data } = await db.from("products").select("id, name, price, stock_count, is_active").order("id");
-  const rows = (data ?? []) as { id: number; name: string; price: number; stock_count: number; is_active: boolean }[];
-  if (rows.length === 0) return "📦 No products yet. Use <b>Add product</b>.";
-  return [
-    "📦 <b>Products</b>",
-    "",
-    ...rows.map((p) => `#${p.id} ${escapeHtml(p.name)} — ${money(p.price)} · stock ${p.stock_count}${p.is_active ? "" : " · hidden"}`),
-  ].join("\n");
+  const { data } = await db
+    .from("products")
+    .select("id, name, price, stock_count, is_active, is_featured, product_type")
+    .order("id");
+  const rows = (data ?? []) as {
+    id: number;
+    name: string;
+    price: number;
+    stock_count: number;
+    is_active: boolean;
+    is_featured: boolean;
+    product_type: string;
+  }[];
+  if (rows.length === 0)
+    return {
+      text: "📦 No products yet. Use <b>Add product</b>.",
+      markup: [[{ text: "⬅️ Admin", callback_data: "adm" }]],
+    };
+  const markup: InlineKeyboard = rows.flatMap((product) => [
+    [
+      {
+        text: `${product.is_active ? "🟢" : "⚪"} ${product.name}`.slice(0, 60),
+        callback_data: `adm:product:${product.id}`,
+      },
+    ],
+  ]);
+  markup.push(
+    [{ text: "➕ Add product", callback_data: "adm:addproduct" }],
+    [{ text: "🔑 Add keys", callback_data: "adm:addkeys" }],
+    [{ text: "⬅️ Admin", callback_data: "adm" }],
+  );
+  return {
+    text: [
+      "📦 <b>Products</b>",
+      "",
+      ...rows.map(
+        (p) =>
+          `#${p.id} ${escapeHtml(p.name)} — ${money(p.price)} · ${p.product_type === "file" ? "unlimited" : `stock ${p.stock_count}`}${p.is_active ? "" : " · hidden"}${p.is_featured ? " · ⭐" : ""}`,
+      ),
+    ].join("\n"),
+    markup,
+  };
+}
+
+async function productDetail(id: number): Promise<{ text: string; markup: InlineKeyboard }> {
+  const db = await getDb();
+  const { data } = await db.from("products").select("*").eq("id", id).maybeSingle();
+  if (!data)
+    return {
+      text: "Product not found.",
+      markup: [[{ text: "⬅️ Products", callback_data: "adm:products" }]],
+    };
+  const product = data as {
+    id: number;
+    name: string;
+    price: number;
+    stock_count: number;
+    is_active: boolean;
+    is_featured: boolean;
+    product_type: string;
+    image_url: string | null;
+    description: string | null;
+  };
+  return {
+    text: [
+      `📦 <b>${escapeHtml(product.name)}</b>`,
+      "",
+      escapeHtml(product.description ?? "No description."),
+      `Price: <b>${money(product.price)}</b>`,
+      `Stock: <b>${product.product_type === "file" ? "unlimited" : product.stock_count}</b>`,
+      `Status: <b>${product.is_active ? "active" : "hidden"}</b> · Featured: <b>${product.is_featured ? "yes" : "no"}</b>`,
+      `Image: <code>${escapeHtml(product.image_url ?? "not set")}</code>`,
+    ].join("\n"),
+    markup: [
+      [
+        {
+          text: product.is_active ? "⚪ Hide product" : "🟢 Activate product",
+          callback_data: `adm:active:${id}`,
+        },
+      ],
+      [
+        {
+          text: product.is_featured ? "☆ Remove featured" : "⭐ Make featured",
+          callback_data: `adm:featured:${id}`,
+        },
+      ],
+      [{ text: "🖼 Set image URL", callback_data: `adm:image:prod:${id}` }],
+      [{ text: "⬅️ Products", callback_data: "adm:products" }],
+    ],
+  };
 }
 
 function settingsText(settings: StoreSettings): string {
@@ -145,23 +244,158 @@ export async function handleAdminCallback(
 
   switch (action) {
     case "stats":
-      await editMessage(chatId, messageId, await stats(), [[{ text: "⬅️ Admin", callback_data: "adm" }]]);
+      await editMessage(chatId, messageId, await stats(), [
+        [{ text: "⬅️ Admin", callback_data: "adm" }],
+      ]);
       return true;
     case "pays": {
       const view = await pendingPayments();
       await editMessage(chatId, messageId, view.text, view.markup);
       return true;
     }
-    case "products":
-      await editMessage(chatId, messageId, await productList(), [
-        [{ text: "➕ Add product", callback_data: "adm:addproduct" }],
-        [{ text: "🔑 Add keys", callback_data: "adm:addkeys" }],
-        [{ text: "⬅️ Admin", callback_data: "adm" }],
+    case "products": {
+      const view = await productList();
+      await editMessage(chatId, messageId, view.text, view.markup);
+      return true;
+    }
+    case "product": {
+      const view = await productDetail(Number(parts[2]));
+      await editMessage(chatId, messageId, view.text, view.markup);
+      return true;
+    }
+    case "categories": {
+      const [{ data: categories }, { data: subcategories }] = await Promise.all([
+        db.from("categories").select("id, name, image_url").order("sort_order").order("name"),
+        db.from("subcategories").select("id, name, category_id, image_url").order("name"),
+      ]);
+      const categoryRows = (categories ?? []) as {
+        id: number;
+        name: string;
+        image_url: string | null;
+      }[];
+      const subRows = (subcategories ?? []) as {
+        id: number;
+        name: string;
+        category_id: number | null;
+        image_url: string | null;
+      }[];
+      const markup: InlineKeyboard = categoryRows.flatMap((category) => [
+        [
+          {
+            text: `📂 ${category.name}`.slice(0, 60),
+            callback_data: `adm:category:${category.id}`,
+          },
+        ],
+        ...subRows
+          .filter((sub) => sub.category_id === category.id)
+          .map((sub) => [
+            { text: `  📁 ${sub.name}`.slice(0, 60), callback_data: `adm:subcategory:${sub.id}` },
+          ]),
+      ]);
+      markup.push([{ text: "⬅️ Admin", callback_data: "adm" }]);
+      await editMessage(
+        chatId,
+        messageId,
+        "🗂 <b>Categories</b>\n\nChoose a category or subcategory.",
+        markup,
+      );
+      return true;
+    }
+    case "category":
+    case "subcategory": {
+      const table = action === "category" ? "categories" : "subcategories";
+      const { data: item } = await db
+        .from(table)
+        .select("id, name, description, image_url")
+        .eq("id", Number(parts[2]))
+        .maybeSingle();
+      if (!item) return false;
+      await editMessage(
+        chatId,
+        messageId,
+        `${action === "category" ? "📂" : "📁"} <b>${escapeHtml(item.name)}</b>\n\n${escapeHtml(item.description ?? "No description.")}\nImage: <code>${escapeHtml(item.image_url ?? "not set")}</code>`,
+        [
+          [
+            {
+              text: "🖼 Set image URL",
+              callback_data: `adm:image:${action === "category" ? "cat" : "sub"}:${item.id}`,
+            },
+          ],
+          [{ text: "⬅️ Categories", callback_data: "adm:categories" }],
+        ],
+      );
+      return true;
+    }
+    case "active":
+    case "featured": {
+      const id = Number(parts[2]);
+      const column = action === "active" ? "is_active" : "is_featured";
+      const { data: current } = await db.from("products").select(column).eq("id", id).maybeSingle();
+      if (!current) return false;
+      const currentValue = (current as Record<string, unknown>)[column];
+      await db
+        .from("products")
+        .update({ [column]: !currentValue })
+        .eq("id", id);
+      const view = await productDetail(id);
+      await editMessage(chatId, messageId, view.text, view.markup);
+      return true;
+    }
+    case "promo": {
+      const { sendDailyPromo } = await import("./bot.server");
+      const result = await sendDailyPromo();
+      await answerCallback(callbackId, `Promo sent to ${result.sent} subscribers`, true);
+      await showAdminMenu(chatId, messageId);
+      return true;
+    }
+    case "templates": {
+      const { data: templates } = await db
+        .from("message_templates")
+        .select("id, title, category, body")
+        .order("category")
+        .order("title");
+      const rows: InlineKeyboard = (templates ?? []).map((template) => [
+        {
+          text: `${template.category}: ${template.title}`.slice(0, 60),
+          callback_data: `adm:template:${template.id}`,
+        },
+      ]);
+      rows.push([{ text: "⬅️ Admin", callback_data: "adm" }]);
+      await editMessage(
+        chatId,
+        messageId,
+        "📝 <b>Message templates</b>\n\nChoose one to use as a broadcast.",
+        rows,
+      );
+      return true;
+    }
+    case "template": {
+      const { data: template } = await db
+        .from("message_templates")
+        .select("body, title")
+        .eq("id", Number(parts[2]))
+        .maybeSingle();
+      if (!template) return false;
+      await setState(chatId, "adm_broadcast", { text: template.body, title: template.title });
+      await editMessage(
+        chatId,
+        messageId,
+        `📣 Template <b>${escapeHtml(template.title)}</b> loaded. Send it now or edit the text by sending a new message.`,
+        [[{ text: "Cancel", callback_data: "adm" }]],
+      );
+      return true;
+    }
+    case "image":
+      await setState(chatId, "adm_image", { scope: parts[2], id: Number(parts[3]) });
+      await editMessage(chatId, messageId, "🖼 Send the public image URL.", [
+        [{ text: "Cancel", callback_data: "adm:products" }],
       ]);
       return true;
     case "addcat":
       await setState(chatId, "adm_addcat");
-      await editMessage(chatId, messageId, "🗂 Send the new category name.", [[{ text: "Cancel", callback_data: "adm" }]]);
+      await editMessage(chatId, messageId, "🗂 Send the new category name.", [
+        [{ text: "Cancel", callback_data: "adm" }],
+      ]);
       return true;
     case "addproduct":
       await setState(chatId, "adm_addproduct");
@@ -195,14 +429,22 @@ export async function handleAdminCallback(
         .select("telegram_id, username, wallet_balance, is_banned")
         .order("id", { ascending: false })
         .limit(15);
-      const rows = (data ?? []) as { telegram_id: number; username: string | null; wallet_balance: number; is_banned: boolean }[];
+      const rows = (data ?? []) as {
+        telegram_id: number;
+        username: string | null;
+        wallet_balance: number;
+        is_banned: boolean;
+      }[];
       await editMessage(
         chatId,
         messageId,
         [
           "👥 <b>Latest customers</b>",
           "",
-          ...rows.map((u) => `${u.telegram_id} @${escapeHtml(u.username ?? "-")} — ${money(u.wallet_balance)}${u.is_banned ? " · 🚫 banned" : ""}`),
+          ...rows.map(
+            (u) =>
+              `${u.telegram_id} @${escapeHtml(u.username ?? "-")} — ${money(u.wallet_balance)}${u.is_banned ? " · 🚫 banned" : ""}`,
+          ),
           "",
           "Use /ban &lt;telegram id&gt; or /unban &lt;telegram id&gt;.",
         ].join("\n"),
@@ -217,7 +459,12 @@ export async function handleAdminCallback(
         .eq("status", "opened")
         .order("id", { ascending: false })
         .limit(10);
-      const rows = (data ?? []) as { id: number; order_id: number; reason: string; status: string }[];
+      const rows = (data ?? []) as {
+        id: number;
+        order_id: number;
+        reason: string;
+        status: string;
+      }[];
       const markup: InlineKeyboard = rows.map((d) => [
         { text: `✅ Resolve dispute #${d.id}`, callback_data: `adm:dis:${d.id}` },
       ]);
@@ -227,7 +474,11 @@ export async function handleAdminCallback(
         messageId,
         rows.length === 0
           ? "⚖️ No open disputes."
-          : ["⚖️ <b>Open disputes</b>", "", ...rows.map((d) => `#${d.id} · order #${d.order_id}\n${escapeHtml(d.reason)}`)].join("\n\n"),
+          : [
+              "⚖️ <b>Open disputes</b>",
+              "",
+              ...rows.map((d) => `#${d.id} · order #${d.order_id}\n${escapeHtml(d.reason)}`),
+            ].join("\n\n"),
         markup,
       );
       return true;
@@ -242,8 +493,16 @@ export async function handleAdminCallback(
         .maybeSingle();
       if (dispute) {
         await db.from("orders").update({ dispute_status: "resolved" }).eq("id", dispute.order_id);
-        const { data: user } = await db.from("bot_users").select("telegram_id").eq("id", dispute.user_id).maybeSingle();
-        if (user) await sendMessage(Number(user.telegram_id), `⚖️ Your dispute on order #${dispute.order_id} has been resolved by the admin.`);
+        const { data: user } = await db
+          .from("bot_users")
+          .select("telegram_id")
+          .eq("id", dispute.user_id)
+          .maybeSingle();
+        if (user)
+          await sendMessage(
+            Number(user.telegram_id),
+            `⚖️ Your dispute on order #${dispute.order_id} has been resolved by the admin.`,
+          );
       }
       await answerCallback(callbackId, "Dispute resolved");
       await showAdminMenu(chatId, messageId);
@@ -251,9 +510,12 @@ export async function handleAdminCallback(
     }
     case "broadcast":
       await setState(chatId, "adm_broadcast");
-      await editMessage(chatId, messageId, "📣 Send the broadcast message to deliver to all customers.", [
-        [{ text: "Cancel", callback_data: "adm" }],
-      ]);
+      await editMessage(
+        chatId,
+        messageId,
+        "📣 Send the broadcast message to deliver to all customers.",
+        [[{ text: "Cancel", callback_data: "adm" }]],
+      );
       return true;
     case "balance":
       await setState(chatId, "adm_balance");
@@ -270,16 +532,25 @@ export async function handleAdminCallback(
     case "set": {
       const which = parts[2];
       if (which === "auto") {
-        await db.from("store_settings").update({ auto_confirm: !settings.auto_confirm }).eq("id", 1);
+        await db
+          .from("store_settings")
+          .update({ auto_confirm: !settings.auto_confirm })
+          .eq("id", 1);
         const fresh = await getSettings();
-        await answerCallback(callbackId, `Auto-confirm ${fresh.auto_confirm ? "enabled" : "disabled"}`);
+        await answerCallback(
+          callbackId,
+          `Auto-confirm ${fresh.auto_confirm ? "enabled" : "disabled"}`,
+        );
         await editMessage(chatId, messageId, settingsText(fresh), settingsKeyboard);
         return true;
       }
       await setState(chatId, `adm_set_${which}`);
-      await editMessage(chatId, messageId, `Send the new value for <b>${escapeHtml(which ?? "")}</b>.`, [
-        [{ text: "Cancel", callback_data: "adm:settings" }],
-      ]);
+      await editMessage(
+        chatId,
+        messageId,
+        `Send the new value for <b>${escapeHtml(which ?? "")}</b>.`,
+        [[{ text: "Cancel", callback_data: "adm:settings" }]],
+      );
       return true;
     }
     case "pay": {
@@ -292,11 +563,25 @@ export async function handleAdminCallback(
         return true;
       }
       if (mode === "ok") {
-        const result = await settleTransaction(tx.id, { auto: false, note: "Approved manually by admin" });
-        await answerCallback(callbackId, result.credited ? "Approved and credited" : "Already processed", true);
+        const result = await settleTransaction(tx.id, {
+          auto: false,
+          note: "Approved manually by admin",
+        });
+        await answerCallback(
+          callbackId,
+          result.credited ? "Approved and credited" : "Already processed",
+          true,
+        );
       } else if (mode === "no") {
-        await db.from("transactions").update({ status: "failed", verification_note: "Rejected by admin" }).eq("id", tx.id);
-        const { data: user } = await db.from("bot_users").select("telegram_id").eq("id", tx.user_id).maybeSingle();
+        await db
+          .from("transactions")
+          .update({ status: "failed", verification_note: "Rejected by admin" })
+          .eq("id", tx.id);
+        const { data: user } = await db
+          .from("bot_users")
+          .select("telegram_id")
+          .eq("id", tx.user_id)
+          .maybeSingle();
         if (user) {
           await sendMessage(
             Number(user.telegram_id),
@@ -334,17 +619,30 @@ export async function handleAdminState(
   }
 
   if (state.name === "adm_addproduct") {
-    const [name, price, type, categoryName, description, link] = text.split("|").map((part) => part.trim());
+    const [name, price, type, categoryName, description, link] = text
+      .split("|")
+      .map((part) => part.trim());
     if (!name || !price || Number.isNaN(Number(price))) {
-      await sendMessage(chatId, "❌ Invalid format. Use: name | price | key/file | category | description | link");
+      await sendMessage(
+        chatId,
+        "❌ Invalid format. Use: name | price | key/file | category | description | link",
+      );
       return true;
     }
     let categoryId: number | null = null;
     if (categoryName) {
-      const { data: existing } = await db.from("categories").select("id").ilike("name", categoryName).maybeSingle();
+      const { data: existing } = await db
+        .from("categories")
+        .select("id")
+        .ilike("name", categoryName)
+        .maybeSingle();
       if (existing) categoryId = existing.id as number;
       else {
-        const { data: created } = await db.from("categories").insert({ name: categoryName }).select("id").single();
+        const { data: created } = await db
+          .from("categories")
+          .insert({ name: categoryName })
+          .select("id")
+          .single();
         categoryId = (created?.id as number) ?? null;
       }
     }
@@ -370,21 +668,57 @@ export async function handleAdminState(
   }
 
   if (state.name === "adm_addkeys") {
-    const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+    const lines = text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
     const productId = Number(lines.shift());
     if (!productId || lines.length === 0) {
-      await sendMessage(chatId, "❌ Send the product id on the first line and keys on following lines.");
+      await sendMessage(
+        chatId,
+        "❌ Send the product id on the first line and keys on following lines.",
+      );
       return true;
     }
-    await db.from("product_keys").insert(lines.map((key) => ({ product_id: productId, key_value: key })));
+    await db
+      .from("product_keys")
+      .insert(lines.map((key) => ({ product_id: productId, key_value: key })));
     const { count } = await db
       .from("product_keys")
       .select("id", { count: "exact", head: true })
       .eq("product_id", productId)
       .eq("is_sold", false);
-    await db.from("products").update({ stock_count: count ?? 0 }).eq("id", productId);
+    await db
+      .from("products")
+      .update({ stock_count: count ?? 0 })
+      .eq("id", productId);
     await setState(chatId, null);
-    await sendMessage(chatId, `🔑 Added ${lines.length} keys. Product #${productId} stock is now ${count ?? 0}.`, adminMenu);
+    await sendMessage(
+      chatId,
+      `🔑 Added ${lines.length} keys. Product #${productId} stock is now ${count ?? 0}.`,
+      adminMenu,
+    );
+    return true;
+  }
+
+  if (state.name === "adm_image") {
+    const scope = String(state.data["scope"] ?? "");
+    const id = Number(state.data["id"]);
+    const table = scope === "prod" ? "products" : scope === "cat" ? "categories" : "subcategories";
+    if (!table || !id || !/^https?:\/\//i.test(text.trim())) {
+      await sendMessage(chatId, "❌ Send a valid http(s) image URL.");
+      return true;
+    }
+    const { error } = await db
+      .from(table)
+      .update({ image_url: text.trim().slice(0, 1000) })
+      .eq("id", id);
+    await setState(chatId, null);
+    await sendMessage(
+      chatId,
+      error ? `❌ ${escapeHtml(error.message)}` : "🖼 Image updated.",
+      adminMenu,
+    );
     return true;
   }
 
@@ -409,16 +743,31 @@ export async function handleAdminState(
       await sendMessage(chatId, "❌ Use: telegram_id amount reason");
       return true;
     }
-    const { data: user } = await db.from("bot_users").select("id").eq("telegram_id", telegramId).maybeSingle();
+    const { data: user } = await db
+      .from("bot_users")
+      .select("id")
+      .eq("telegram_id", telegramId)
+      .maybeSingle();
     if (!user) {
       await sendMessage(chatId, "❌ No customer with that Telegram ID.");
       return true;
     }
     const { adjustBalance } = await import("./db.server");
-    const balance = await adjustBalance(user.id as number, amount, reasonParts.join(" ") || "Admin adjustment");
+    const balance = await adjustBalance(
+      user.id as number,
+      amount,
+      reasonParts.join(" ") || "Admin adjustment",
+    );
     await setState(chatId, null);
-    await sendMessage(chatId, `💵 Balance updated. New balance: <b>${money(balance)}</b>.`, adminMenu);
-    await sendMessage(telegramId, `💵 An admin updated your balance by <b>${money(amount)}</b>. New balance: <b>${money(balance)}</b>.`);
+    await sendMessage(
+      chatId,
+      `💵 Balance updated. New balance: <b>${money(balance)}</b>.`,
+      adminMenu,
+    );
+    await sendMessage(
+      telegramId,
+      `💵 An admin updated your balance by <b>${money(amount)}</b>. New balance: <b>${money(balance)}</b>.`,
+    );
     return true;
   }
 
@@ -432,7 +781,10 @@ export async function handleAdminState(
           : field === "usdc"
             ? "usdc_erc20_address"
             : "welcome_message";
-    await db.from("store_settings").update({ [column]: text.trim() }).eq("id", 1);
+    await db
+      .from("store_settings")
+      .update({ [column]: text.trim() })
+      .eq("id", 1);
     await setState(chatId, null);
     await sendMessage(chatId, "✅ Saved.", adminMenu);
     return true;

@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -38,30 +38,39 @@ export type Database = {
           first_name: string | null
           id: number
           is_banned: boolean
+          locked_bonus: number
           telegram_id: number
           updated_at: string
           username: string | null
           wallet_balance: number
+          web_user_id: string | null
+          welcome_bonus_granted: boolean
         }
         Insert: {
           created_at?: string
           first_name?: string | null
           id?: number
           is_banned?: boolean
+          locked_bonus?: number
           telegram_id: number
           updated_at?: string
           username?: string | null
           wallet_balance?: number
+          web_user_id?: string | null
+          welcome_bonus_granted?: boolean
         }
         Update: {
           created_at?: string
           first_name?: string | null
           id?: number
           is_banned?: boolean
+          locked_bonus?: number
           telegram_id?: number
           updated_at?: string
           username?: string | null
           wallet_balance?: number
+          web_user_id?: string | null
+          welcome_bonus_granted?: boolean
         }
         Relationships: []
       }
@@ -152,6 +161,38 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_promo_log: {
+        Row: {
+          created_at: string
+          id: number
+          run_date: string
+          sent: boolean
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          run_date?: string
+          sent?: boolean
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          run_date?: string
+          sent?: boolean
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_promo_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "bot_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       disputes: {
         Row: {
           admin_notes: string | null
@@ -199,6 +240,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      job_state: {
+        Row: {
+          created_at: string
+          last_result: Json | null
+          last_run_at: string | null
+          locked_until: string | null
+          name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          last_result?: Json | null
+          last_run_at?: string | null
+          locked_until?: string | null
+          name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          last_result?: Json | null
+          last_run_at?: string | null
+          locked_until?: string | null
+          name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      message_templates: {
+        Row: {
+          body: string
+          category: string
+          created_at: string
+          id: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          category?: string
+          created_at?: string
+          id?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          category?: string
+          created_at?: string
+          id?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       order_items: {
         Row: {
@@ -252,6 +350,9 @@ export type Database = {
         Row: {
           completed_at: string | null
           created_at: string
+          delivered_at: string | null
+          delivery_error: string | null
+          delivery_status: string
           dispute_status: Database["public"]["Enums"]["dispute_status"]
           id: number
           status: Database["public"]["Enums"]["order_status"]
@@ -261,6 +362,9 @@ export type Database = {
         Insert: {
           completed_at?: string | null
           created_at?: string
+          delivered_at?: string | null
+          delivery_error?: string | null
+          delivery_status?: string
           dispute_status?: Database["public"]["Enums"]["dispute_status"]
           id?: number
           status?: Database["public"]["Enums"]["order_status"]
@@ -270,6 +374,9 @@ export type Database = {
         Update: {
           completed_at?: string | null
           created_at?: string
+          delivered_at?: string | null
+          delivery_error?: string | null
+          delivery_status?: string
           dispute_status?: Database["public"]["Enums"]["dispute_status"]
           id?: number
           status?: Database["public"]["Enums"]["order_status"]
@@ -340,6 +447,7 @@ export type Database = {
           id: number
           image_url: string | null
           is_active: boolean
+          is_featured: boolean
           name: string
           price: number
           product_type: Database["public"]["Enums"]["product_type"]
@@ -355,6 +463,7 @@ export type Database = {
           id?: number
           image_url?: string | null
           is_active?: boolean
+          is_featured?: boolean
           name: string
           price: number
           product_type?: Database["public"]["Enums"]["product_type"]
@@ -370,6 +479,7 @@ export type Database = {
           id?: number
           image_url?: string | null
           is_active?: boolean
+          is_featured?: boolean
           name?: string
           price?: number
           product_type?: Database["public"]["Enums"]["product_type"]
@@ -394,15 +504,51 @@ export type Database = {
           },
         ]
       }
+      store_reviews: {
+        Row: {
+          author: string
+          body: string
+          created_at: string
+          id: number
+          initials: string
+          is_published: boolean
+          product_label: string | null
+          rating: number
+        }
+        Insert: {
+          author: string
+          body: string
+          created_at?: string
+          id?: never
+          initials: string
+          is_published?: boolean
+          product_label?: string | null
+          rating?: number
+        }
+        Update: {
+          author?: string
+          body?: string
+          created_at?: string
+          id?: never
+          initials?: string
+          is_published?: boolean
+          product_label?: string | null
+          rating?: number
+        }
+        Relationships: []
+      }
       store_settings: {
         Row: {
           admin_telegram_id: number | null
           amount_tolerance_percent: number
           auto_confirm: boolean
           banner_image_url: string | null
+          bonus_unlock_deposit_usd: number
           btc_address: string | null
           channel_username: string | null
           id: number
+          ltc_address: string | null
+          min_purchase_usd: number
           min_topup_usd: number
           mini_app_url: string | null
           payment_expiry_minutes: number
@@ -410,6 +556,7 @@ export type Database = {
           support_username: string | null
           updated_at: string
           usdc_erc20_address: string | null
+          usdt_erc20_address: string | null
           usdt_trc20_address: string | null
           welcome_message: string
         }
@@ -418,9 +565,12 @@ export type Database = {
           amount_tolerance_percent?: number
           auto_confirm?: boolean
           banner_image_url?: string | null
+          bonus_unlock_deposit_usd?: number
           btc_address?: string | null
           channel_username?: string | null
           id?: number
+          ltc_address?: string | null
+          min_purchase_usd?: number
           min_topup_usd?: number
           mini_app_url?: string | null
           payment_expiry_minutes?: number
@@ -428,6 +578,7 @@ export type Database = {
           support_username?: string | null
           updated_at?: string
           usdc_erc20_address?: string | null
+          usdt_erc20_address?: string | null
           usdt_trc20_address?: string | null
           welcome_message?: string
         }
@@ -436,9 +587,12 @@ export type Database = {
           amount_tolerance_percent?: number
           auto_confirm?: boolean
           banner_image_url?: string | null
+          bonus_unlock_deposit_usd?: number
           btc_address?: string | null
           channel_username?: string | null
           id?: number
+          ltc_address?: string | null
+          min_purchase_usd?: number
           min_topup_usd?: number
           mini_app_url?: string | null
           payment_expiry_minutes?: number
@@ -446,6 +600,7 @@ export type Database = {
           support_username?: string | null
           updated_at?: string
           usdc_erc20_address?: string | null
+          usdt_erc20_address?: string | null
           usdt_trc20_address?: string | null
           welcome_message?: string
         }
@@ -669,6 +824,7 @@ export type Database = {
         }
         Returns: number
       }
+      checkout_cart: { Args: { p_user_id: number }; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -676,12 +832,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      unlock_bonus_if_eligible: { Args: { _user_id: number }; Returns: number }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
       dispute_status: "nil" | "opened" | "resolved"
       order_status: "processing" | "completed" | "cancelled"
-      payment_asset: "BTC" | "USDT_TRC20" | "USDC_ERC20"
+      payment_asset: "BTC" | "USDT_TRC20" | "USDC_ERC20" | "USDT_ERC20" | "LTC"
       product_type: "key" | "file"
       transaction_status:
         | "pending"
@@ -704,12 +861,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -733,11 +890,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -758,11 +915,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -783,11 +940,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -800,11 +957,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -819,7 +976,7 @@ export const Constants = {
       app_role: ["admin", "moderator", "user"],
       dispute_status: ["nil", "opened", "resolved"],
       order_status: ["processing", "completed", "cancelled"],
-      payment_asset: ["BTC", "USDT_TRC20", "USDC_ERC20"],
+      payment_asset: ["BTC", "USDT_TRC20", "USDC_ERC20", "USDT_ERC20", "LTC"],
       product_type: ["key", "file"],
       transaction_status: [
         "pending",

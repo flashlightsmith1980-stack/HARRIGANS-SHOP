@@ -10,6 +10,8 @@ import {
   getCart,
   listCategories,
   listProducts,
+  listFeaturedProducts,
+  stockMap,
   listOrders,
   listSubcategories,
   type Product,
@@ -37,11 +39,14 @@ export async function authenticate(initData: string): Promise<MiniAppUser> {
   if (computed !== hash) throw new Error("Invalid Telegram signature");
 
   const authDate = Number(params.get("auth_date") ?? 0);
-  if (!authDate || Date.now() / 1000 - authDate > 86_400) throw new Error("Session expired, reopen the app");
+  if (!authDate || Date.now() / 1000 - authDate > 86_400)
+    throw new Error("Session expired, reopen the app");
 
-  const parsed = JSON.parse(params.get("user") ?? "null") as
-    | { id: number; username?: string; first_name?: string }
-    | null;
+  const parsed = JSON.parse(params.get("user") ?? "null") as {
+    id: number;
+    username?: string;
+    first_name?: string;
+  } | null;
   if (!parsed?.id) throw new Error("Missing Telegram user");
 
   const user = await getOrCreateUser(parsed);
@@ -50,7 +55,7 @@ export async function authenticate(initData: string): Promise<MiniAppUser> {
   return { user, settings };
 }
 
-function publicProduct(p: Product) {
+function publicProduct(p: Product, stock: number) {
   return {
     id: p.id,
     name: p.name,
@@ -59,21 +64,30 @@ function publicProduct(p: Product) {
     image_url: p.image_url,
     category_id: p.category_id,
     subcategory_id: p.subcategory_id,
-    in_stock: p.product_type === "file" || p.stock_count > 0,
+    stock: p.product_type === "file" ? null : stock,
+    in_stock: p.product_type === "file" || stock > 0,
+    is_featured: p.is_featured,
   };
 }
 
 export async function bootstrap(initData: string) {
   const { user, settings } = await authenticate(initData);
   const db = await getDb();
-  const [categories, products, cart, orders] = await Promise.all([
+  const [categories, products, featured, cart, orders] = await Promise.all([
     listCategories(),
     listProducts(null),
+    listFeaturedProducts(),
     getCart(user.id),
     listOrders(user.id),
   ]);
+  const allProducts = [...products, ...featured, ...cart.map((row) => row.product)];
+  const stocks = await stockMap([...new Map(allProducts.map((p) => [p.id, p])).values()]);
   const subs = await Promise.all(categories.map((c) => listSubcategories(c.id)));
-  const { data: fresh } = await db.from("bot_users").select("wallet_balance").eq("id", user.id).maybeSingle();
+  const { data: fresh } = await db
+    .from("bot_users")
+    .select("wallet_balance")
+    .eq("id", user.id)
+    .maybeSingle();
 
   return {
     user: {
@@ -101,11 +115,12 @@ export async function bootstrap(initData: string) {
         image_url: s.image_url,
       })),
     })),
-    products: products.map(publicProduct),
+    products: products.map((p) => publicProduct(p, stocks[p.id] ?? 0)),
+    featured: featured.map((p) => publicProduct(p, stocks[p.id] ?? 0)),
     cart: cart.map((row) => ({
       id: row.id,
       quantity: row.quantity,
-      product: publicProduct(row.product),
+      product: publicProduct(row.product, stocks[row.product.id] ?? 0),
     })),
     cartTotal: cartTotal(cart),
     orders,
@@ -169,16 +184,30 @@ export async function topUp(initData: string, asset: PaymentAsset, amountUsd: nu
 export async function submitHash(initData: string, txId: number, hash: string) {
   const { user, settings } = await authenticate(initData);
   const db = await getDb();
-  const { data } = await db.from("transactions").select("*").eq("id", txId).eq("user_id", user.id).maybeSingle();
+  const { data } = await db
+    .from("transactions")
+    .select("*")
+    .eq("id", txId)
+    .eq("user_id", user.id)
+    .maybeSingle();
   const tx = data as Transaction | null;
   if (!tx) throw new Error("Invoice not found");
-  if (!isPlausibleHash(tx.asset, hash)) throw new Error("That does not look like a valid transaction hash");
+  if (!isPlausibleHash(tx.asset, hash))
+    throw new Error("That does not look like a valid transaction hash");
   const { error } = await db
     .from("transactions")
     .update({ tx_hash: hash, status: "submitted", submitted_at: new Date().toISOString() })
     .eq("id", tx.id);
   if (error) throw new Error("This transaction hash was already submitted");
   const outcome = await verifyAndSettle({ ...tx, tx_hash: hash, status: "submitted" }, settings);
-  const { data: fresh } = await db.from("bot_users").select("wallet_balance").eq("id", user.id).maybeSingle();
-  return { status: outcome.status, message: outcome.message, balance: Number(fresh?.wallet_balance ?? 0) };
+  const { data: fresh } = await db
+    .from("bot_users")
+    .select("wallet_balance")
+    .eq("id", user.id)
+    .maybeSingle();
+  return {
+    status: outcome.status,
+    message: outcome.message,
+    balance: Number(fresh?.wallet_balance ?? 0),
+  };
 }

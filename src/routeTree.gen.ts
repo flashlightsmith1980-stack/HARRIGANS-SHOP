@@ -13,8 +13,13 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ShopRouteImport } from './routes/shop'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedOpsX7k2q9RouteImport } from './routes/_authenticated/ops-x7k2q9'
+import { Route as ApiPublicHooksConfigureTelegramRouteImport } from './routes/api/public/hooks/configure-telegram'
+import { Route as ApiPublicHooksDailyPromoRouteImport } from './routes/api/public/hooks/daily-promo'
 import { Route as ApiPublicHooksVerifyPaymentsRouteImport } from './routes/api/public/hooks/verify-payments'
+import { Route as ApiPublicMediaSplatRouteImport } from './routes/api/public/media/$'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 
 const IndexRoute = IndexRouteImport.update({
@@ -36,17 +41,44 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShopRoute = ShopRouteImport.update({
+  id: '/shop',
+  path: '/shop',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOpsX7k2q9Route = AuthenticatedOpsX7k2q9RouteImport.update({
+  id: '/ops-x7k2q9',
+  path: '/ops-x7k2q9',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const ApiPublicHooksConfigureTelegramRoute =
+  ApiPublicHooksConfigureTelegramRouteImport.update({
+    id: '/api/public/hooks/configure-telegram',
+    path: '/api/public/hooks/configure-telegram',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksDailyPromoRoute =
+  ApiPublicHooksDailyPromoRouteImport.update({
+    id: '/api/public/hooks/daily-promo',
+    path: '/api/public/hooks/daily-promo',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksVerifyPaymentsRoute =
   ApiPublicHooksVerifyPaymentsRouteImport.update({
     id: '/api/public/hooks/verify-payments',
     path: '/api/public/hooks/verify-payments',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicMediaSplatRoute = ApiPublicMediaSplatRouteImport.update({
+  id: '/api/public/media/$',
+  path: '/api/public/media/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicTelegramWebhookRoute =
   ApiPublicTelegramWebhookRouteImport.update({
     id: '/api/public/telegram/webhook',
@@ -58,16 +90,26 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/auth': typeof AuthRoute
+  '/shop': typeof ShopRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/ops-x7k2q9': typeof AuthenticatedOpsX7k2q9Route
+  '/api/public/hooks/configure-telegram': typeof ApiPublicHooksConfigureTelegramRoute
+  '/api/public/hooks/daily-promo': typeof ApiPublicHooksDailyPromoRoute
   '/api/public/hooks/verify-payments': typeof ApiPublicHooksVerifyPaymentsRoute
+  '/api/public/media/$': typeof ApiPublicMediaSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/auth': typeof AuthRoute
+  '/shop': typeof ShopRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/ops-x7k2q9': typeof AuthenticatedOpsX7k2q9Route
+  '/api/public/hooks/configure-telegram': typeof ApiPublicHooksConfigureTelegramRoute
+  '/api/public/hooks/daily-promo': typeof ApiPublicHooksDailyPromoRoute
   '/api/public/hooks/verify-payments': typeof ApiPublicHooksVerifyPaymentsRoute
+  '/api/public/media/$': typeof ApiPublicMediaSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRoutesById {
@@ -76,8 +118,13 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/app': typeof AppRoute
   '/auth': typeof AuthRoute
+  '/shop': typeof ShopRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/ops-x7k2q9': typeof AuthenticatedOpsX7k2q9Route
+  '/api/public/hooks/configure-telegram': typeof ApiPublicHooksConfigureTelegramRoute
+  '/api/public/hooks/daily-promo': typeof ApiPublicHooksDailyPromoRoute
   '/api/public/hooks/verify-payments': typeof ApiPublicHooksVerifyPaymentsRoute
+  '/api/public/media/$': typeof ApiPublicMediaSplatRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
 }
 export interface FileRouteTypes {
@@ -86,16 +133,26 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/auth'
+    | '/shop'
     | '/dashboard'
+    | '/ops-x7k2q9'
+    | '/api/public/hooks/configure-telegram'
+    | '/api/public/hooks/daily-promo'
     | '/api/public/hooks/verify-payments'
+    | '/api/public/media/$'
     | '/api/public/telegram/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/app'
     | '/auth'
+    | '/shop'
     | '/dashboard'
+    | '/ops-x7k2q9'
+    | '/api/public/hooks/configure-telegram'
+    | '/api/public/hooks/daily-promo'
     | '/api/public/hooks/verify-payments'
+    | '/api/public/media/$'
     | '/api/public/telegram/webhook'
   id:
     | '__root__'
@@ -103,8 +160,13 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/app'
     | '/auth'
+    | '/shop'
     | '/_authenticated/dashboard'
+    | '/_authenticated/ops-x7k2q9'
+    | '/api/public/hooks/configure-telegram'
+    | '/api/public/hooks/daily-promo'
     | '/api/public/hooks/verify-payments'
+    | '/api/public/media/$'
     | '/api/public/telegram/webhook'
   fileRoutesById: FileRoutesById
 }
@@ -113,7 +175,11 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AppRoute: typeof AppRoute
   AuthRoute: typeof AuthRoute
+  ShopRoute: typeof ShopRoute
+  ApiPublicHooksConfigureTelegramRoute: typeof ApiPublicHooksConfigureTelegramRoute
+  ApiPublicHooksDailyPromoRoute: typeof ApiPublicHooksDailyPromoRoute
   ApiPublicHooksVerifyPaymentsRoute: typeof ApiPublicHooksVerifyPaymentsRoute
+  ApiPublicMediaSplatRoute: typeof ApiPublicMediaSplatRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
 }
 
@@ -147,6 +213,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shop': {
+      id: '/shop'
+      path: '/shop'
+      fullPath: '/shop'
+      preLoaderRoute: typeof ShopRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -154,11 +227,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/ops-x7k2q9': {
+      id: '/_authenticated/ops-x7k2q9'
+      path: '/ops-x7k2q9'
+      fullPath: '/ops-x7k2q9'
+      preLoaderRoute: typeof AuthenticatedOpsX7k2q9RouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/public/hooks/configure-telegram': {
+      id: '/api/public/hooks/configure-telegram'
+      path: '/api/public/hooks/configure-telegram'
+      fullPath: '/api/public/hooks/configure-telegram'
+      preLoaderRoute: typeof ApiPublicHooksConfigureTelegramRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/daily-promo': {
+      id: '/api/public/hooks/daily-promo'
+      path: '/api/public/hooks/daily-promo'
+      fullPath: '/api/public/hooks/daily-promo'
+      preLoaderRoute: typeof ApiPublicHooksDailyPromoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/verify-payments': {
       id: '/api/public/hooks/verify-payments'
       path: '/api/public/hooks/verify-payments'
       fullPath: '/api/public/hooks/verify-payments'
       preLoaderRoute: typeof ApiPublicHooksVerifyPaymentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/media/$': {
+      id: '/api/public/media/$'
+      path: '/api/public/media/$'
+      fullPath: '/api/public/media/$'
+      preLoaderRoute: typeof ApiPublicMediaSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/telegram/webhook': {
@@ -173,10 +274,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedOpsX7k2q9Route: typeof AuthenticatedOpsX7k2q9Route
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedOpsX7k2q9Route: AuthenticatedOpsX7k2q9Route,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -187,7 +290,11 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AppRoute: AppRoute,
   AuthRoute: AuthRoute,
+  ShopRoute: ShopRoute,
+  ApiPublicHooksConfigureTelegramRoute: ApiPublicHooksConfigureTelegramRoute,
+  ApiPublicHooksDailyPromoRoute: ApiPublicHooksDailyPromoRoute,
   ApiPublicHooksVerifyPaymentsRoute: ApiPublicHooksVerifyPaymentsRoute,
+  ApiPublicMediaSplatRoute: ApiPublicMediaSplatRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
 }
 export const routeTree = rootRouteImport

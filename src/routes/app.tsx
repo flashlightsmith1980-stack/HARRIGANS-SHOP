@@ -13,13 +13,27 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+type TelegramWebApp = {
+  ready?: () => void;
+  expand?: () => void;
+  initData?: string;
+};
+
 export const Route = createFileRoute("/app")({
   head: () => ({
     meta: [
       { title: "Store App — Enroll Log" },
-      { name: "description", content: "Browse the catalog, top up your balance with crypto and buy digital goods inside Telegram." },
+      {
+        name: "description",
+        content:
+          "Browse the catalog, top up your balance with crypto and buy digital goods inside Telegram.",
+      },
       { property: "og:title", content: "Store App — Enroll Log" },
-      { property: "og:description", content: "Browse the catalog, top up with BTC, USDT or USDC and buy instantly inside Telegram." },
+      {
+        property: "og:description",
+        content:
+          "Browse the catalog, top up with BTC, USDT or USDC and buy instantly inside Telegram.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -43,7 +57,15 @@ function usd(value: number) {
   return `$${Number(value).toFixed(2)}`;
 }
 
-function Banner({ image, title, subtitle }: { image?: string | null; title: string; subtitle?: string | null }) {
+function Banner({
+  image,
+  title,
+  subtitle,
+}: {
+  image?: string | null;
+  title: string;
+  subtitle?: string | null;
+}) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-border bg-card">
       {image ? (
@@ -82,7 +104,7 @@ function MiniApp() {
   const [hash, setHash] = useState("");
 
   useEffect(() => {
-    const tg = (window as unknown as { Telegram?: { WebApp?: any } }).Telegram?.WebApp;
+    const tg = (window as unknown as { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
     tg?.ready?.();
     tg?.expand?.();
     const value = tg?.initData as string | undefined;
@@ -109,27 +131,66 @@ function MiniApp() {
     if (initData) void refresh(initData);
   }, [initData, refresh]);
 
-  const run = useCallback(
-    async (fn: () => Promise<void>) => {
-      setBusy(true);
-      setNotice(null);
-      try {
-        await fn();
-      } catch (e) {
-        setNotice(e instanceof Error ? e.message : "Something went wrong");
-      } finally {
-        setBusy(false);
-      }
-    },
-    [],
-  );
+  const run = useCallback(async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await fn();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
 
   const visibleProducts = useMemo(() => {
     if (!data) return [];
     if (subcategoryId) return data.products.filter((p) => p.subcategory_id === subcategoryId);
-    if (categoryId) return data.products.filter((p) => p.category_id === categoryId && !p.subcategory_id);
+    if (categoryId)
+      return data.products.filter((p) => p.category_id === categoryId && !p.subcategory_id);
     return data.products;
   }, [data, categoryId, subcategoryId]);
+
+  const productCard = (product: Boot["products"][number]) => (
+    <article key={product.id} className="overflow-hidden rounded-2xl border border-border bg-card">
+      {product.image_url ? (
+        <img
+          src={product.image_url}
+          alt={product.name}
+          loading="lazy"
+          className="h-40 w-full object-cover"
+        />
+      ) : null}
+      <div className="flex flex-col gap-2 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <p className="font-semibold">{product.name}</p>
+          <span className="shrink-0 font-semibold text-primary">{usd(product.price)}</span>
+        </div>
+        {product.description ? (
+          <p className="line-clamp-3 text-sm text-muted-foreground">{product.description}</p>
+        ) : null}
+        <p className="text-xs text-muted-foreground">
+          {product.stock === null
+            ? "Unlimited availability"
+            : product.stock > 0
+              ? `${product.stock} in stock`
+              : "Out of stock"}
+        </p>
+        <Button
+          disabled={busy || !product.in_stock}
+          onClick={() =>
+            run(async () => {
+              await addToCartFn({ data: { initData: initData!, productId: product.id } });
+              await refresh(initData!);
+              setNotice(`${product.name} added to your cart.`);
+            })
+          }
+        >
+          {product.in_stock ? "Add to cart" : "Out of stock"}
+        </Button>
+      </div>
+    </article>
+  );
 
   const category = data?.categories.find((c) => c.id === categoryId) ?? null;
   const subcategory = category?.subcategories.find((s) => s.id === subcategoryId) ?? null;
@@ -163,16 +224,25 @@ function MiniApp() {
         </div>
       </header>
 
-      {notice ? <p className="rounded-lg border border-border bg-card p-3 text-sm">{notice}</p> : null}
+      {notice ? (
+        <p className="rounded-lg border border-border bg-card p-3 text-sm">{notice}</p>
+      ) : null}
 
       {tab === "shop" ? (
         <section className="flex flex-col gap-4">
           {subcategory ? (
             <>
-              <button className="flex items-center gap-1 text-sm text-muted-foreground" onClick={() => setSubcategoryId(null)}>
+              <button
+                className="flex items-center gap-1 text-sm text-muted-foreground"
+                onClick={() => setSubcategoryId(null)}
+              >
                 <ArrowLeft className="size-4" /> {category?.name}
               </button>
-              <Banner image={subcategory.image_url} title={subcategory.name} subtitle={subcategory.description} />
+              <Banner
+                image={subcategory.image_url}
+                title={subcategory.name}
+                subtitle={subcategory.description}
+              />
             </>
           ) : category ? (
             <>
@@ -182,11 +252,19 @@ function MiniApp() {
               >
                 <ArrowLeft className="size-4" /> All categories
               </button>
-              <Banner image={category.image_url} title={category.name} subtitle={category.description} />
+              <Banner
+                image={category.image_url}
+                title={category.name}
+                subtitle={category.description}
+              />
               {category.subcategories.length > 0 ? (
                 <div className="grid grid-cols-2 gap-3">
                   {category.subcategories.map((sub) => (
-                    <button key={sub.id} className="text-left" onClick={() => setSubcategoryId(sub.id)}>
+                    <button
+                      key={sub.id}
+                      className="text-left"
+                      onClick={() => setSubcategoryId(sub.id)}
+                    >
                       <Banner image={sub.image_url} title={sub.name} subtitle={sub.description} />
                     </button>
                   ))}
@@ -195,7 +273,11 @@ function MiniApp() {
             </>
           ) : (
             <>
-              <Banner image={data.store.banner} title={data.store.name} subtitle={data.store.welcome} />
+              <Banner
+                image={data.store.banner}
+                title={data.store.name}
+                subtitle={data.store.welcome}
+              />
               <div className="grid grid-cols-2 gap-3">
                 {data.categories.map((c) => (
                   <button key={c.id} className="text-left" onClick={() => setCategoryId(c.id)}>
@@ -203,6 +285,12 @@ function MiniApp() {
                   </button>
                 ))}
               </div>
+              {data.featured.length > 0 ? (
+                <div className="flex flex-col gap-3">
+                  <h2 className="text-base font-semibold">Featured</h2>
+                  {data.featured.map(productCard)}
+                </div>
+              ) : null}
             </>
           )}
 
@@ -210,48 +298,28 @@ function MiniApp() {
             {visibleProducts.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing here yet.</p>
             ) : null}
-            {visibleProducts.map((product) => (
-              <article key={product.id} className="overflow-hidden rounded-2xl border border-border bg-card">
-                {product.image_url ? (
-                  <img src={product.image_url} alt={product.name} loading="lazy" className="h-40 w-full object-cover" />
-                ) : null}
-                <div className="flex flex-col gap-2 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="font-semibold">{product.name}</p>
-                    <span className="shrink-0 font-semibold text-primary">{usd(product.price)}</span>
-                  </div>
-                  {product.description ? (
-                    <p className="line-clamp-3 text-sm text-muted-foreground">{product.description}</p>
-                  ) : null}
-                  <Button
-                    disabled={busy || !product.in_stock}
-                    onClick={() =>
-                      run(async () => {
-                        await addToCartFn({ data: { initData: initData!, productId: product.id } });
-                        await refresh(initData!);
-                        setNotice(`${product.name} added to your cart.`);
-                      })
-                    }
-                  >
-                    {product.in_stock ? "Add to cart" : "Out of stock"}
-                  </Button>
-                </div>
-              </article>
-            ))}
+            {visibleProducts.map(productCard)}
           </div>
         </section>
       ) : null}
 
       {tab === "cart" ? (
         <section className="flex flex-col gap-3">
-          {data.cart.length === 0 ? <p className="text-sm text-muted-foreground">Your cart is empty.</p> : null}
+          {data.cart.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Your cart is empty.</p>
+          ) : null}
           {data.cart.map((row) => (
-            <div key={row.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3">
+            <div
+              key={row.id}
+              className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3"
+            >
               <div>
                 <p className="text-sm font-medium">
                   {row.product.name} × {row.quantity}
                 </p>
-                <p className="text-xs text-muted-foreground">{usd(row.product.price * row.quantity)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {usd(row.product.price * row.quantity)}
+                </p>
               </div>
               <Button
                 variant="ghost"
@@ -277,7 +345,11 @@ function MiniApp() {
                   run(async () => {
                     const result = await checkoutFn({ data: { initData: initData! } });
                     await refresh(initData!);
-                    setNotice(result.ok ? `Order #${result.orderId} completed — check the bot chat for your items.` : result.reason);
+                    setNotice(
+                      result.ok
+                        ? `Order #${result.orderId} completed — check the bot chat for your items.`
+                        : result.reason,
+                    );
                     if (result.ok) setTab("orders");
                   })
                 }
@@ -301,7 +373,9 @@ function MiniApp() {
               <p className="text-sm font-semibold">
                 Send exactly {invoice.amount} {invoice.assetLabel}
               </p>
-              <p className="text-xs text-muted-foreground">{invoice.network} · invoice {invoice.code} · {usd(invoice.amountUsd)}</p>
+              <p className="text-xs text-muted-foreground">
+                {invoice.network} · invoice {invoice.code} · {usd(invoice.amountUsd)}
+              </p>
               <button
                 className="flex items-center justify-between gap-2 rounded-lg border border-border p-2 text-left text-xs break-all"
                 onClick={() => navigator.clipboard?.writeText(invoice.address)}
@@ -309,12 +383,18 @@ function MiniApp() {
                 {invoice.address}
                 <Copy className="size-4 shrink-0" />
               </button>
-              <Input placeholder="Transaction hash (TxID)" value={hash} onChange={(e) => setHash(e.target.value)} />
+              <Input
+                placeholder="Transaction hash (TxID)"
+                value={hash}
+                onChange={(e) => setHash(e.target.value)}
+              />
               <Button
                 disabled={busy || hash.trim().length < 6}
                 onClick={() =>
                   run(async () => {
-                    const result = await submitHashFn({ data: { initData: initData!, txId: invoice.id, hash } });
+                    const result = await submitHashFn({
+                      data: { initData: initData!, txId: invoice.id, hash },
+                    });
                     setNotice(result.message);
                     setHash("");
                     if (result.status === "credited") setInvoice(null);
@@ -333,7 +413,12 @@ function MiniApp() {
               <p className="text-sm font-semibold">Top up</p>
               <div className="grid grid-cols-3 gap-2">
                 {ASSETS.map((a) => (
-                  <Button key={a.id} variant={asset === a.id ? "default" : "outline"} size="sm" onClick={() => setAsset(a.id)}>
+                  <Button
+                    key={a.id}
+                    variant={asset === a.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setAsset(a.id)}
+                  >
                     {a.id.split("_")[0]}
                   </Button>
                 ))}
@@ -364,25 +449,45 @@ function MiniApp() {
 
       {tab === "orders" ? (
         <section className="flex flex-col gap-3">
-          {data.orders.length === 0 ? <p className="text-sm text-muted-foreground">No orders yet.</p> : null}
+          {data.orders.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No orders yet.</p>
+          ) : null}
           {data.orders.map((order) => (
             <div key={order.id} className="rounded-xl border border-border bg-card p-3 text-sm">
               <p className="font-medium">Order #{order.id}</p>
               <p className="text-xs text-muted-foreground">
-                {usd(Number(order.total_amount))} · {order.status} · {new Date(order.created_at).toLocaleDateString()}
+                {usd(Number(order.total_amount))} · {order.status} ·{" "}
+                {new Date(order.created_at).toLocaleDateString()}
               </p>
+              {order.order_items?.map((item) => (
+                <div
+                  key={`${order.id}-${item.product_name}`}
+                  className="mt-2 border-t border-border pt-2"
+                >
+                  <p>
+                    {item.product_name} x {item.quantity}
+                  </p>
+                  {item.delivered_asset ? (
+                    <p className="break-all whitespace-pre-wrap text-xs text-muted-foreground">
+                      {item.delivered_asset}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
             </div>
           ))}
         </section>
       ) : null}
 
       <nav className="fixed inset-x-0 bottom-0 mx-auto flex w-full max-w-lg items-center justify-around border-t border-border bg-background/95 p-2 backdrop-blur">
-        {([
-          ["shop", "Shop", ShoppingCart],
-          ["cart", `Cart${data.cart.length ? ` (${data.cart.length})` : ""}`, ShoppingCart],
-          ["wallet", "Wallet", Wallet],
-          ["orders", "Orders", Wallet],
-        ] as const).map(([id, label]) => (
+        {(
+          [
+            ["shop", "Shop", ShoppingCart],
+            ["cart", `Cart${data.cart.length ? ` (${data.cart.length})` : ""}`, ShoppingCart],
+            ["wallet", "Wallet", Wallet],
+            ["orders", "Orders", Wallet],
+          ] as const
+        ).map(([id, label]) => (
           <button
             key={id}
             className={`rounded-lg px-3 py-2 text-xs font-medium ${tab === id ? "bg-primary/15 text-primary" : "text-muted-foreground"}`}
